@@ -21,7 +21,8 @@ if str(SRC_DIR) not in sys.path:
 import streamlit as st
 import streamlit.components.v1 as components
 
-from rios.core.config import get_settings
+from rios.core.config import get_secrets, get_settings
+from rios.literature import search_openalex
 
 st.set_page_config(
     page_title="RIOS — Research Intelligence Operating System",
@@ -106,19 +107,60 @@ st.markdown(
 st.subheader("1. Select a research domain")
 domain = st.selectbox("Domain", options=settings.domains, index=0)
 
-st.subheader("2. What's built so far")
+st.subheader("2. Search real literature (OpenAlex)")
+
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    keywords_input = st.text_input(
+        "Keywords (comma-separated)", value=domain
+    )
+with col2:
+    year_min = st.number_input(
+        "From year", value=settings.literature_defaults.publication_year_min
+    )
+with col3:
+    year_max = st.number_input(
+        "To year", value=settings.literature_defaults.publication_year_max
+    )
+
+if st.button("Search OpenAlex", type="primary"):
+    keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
+    secrets = get_secrets()
+    with st.spinner("Querying OpenAlex..."):
+        try:
+            papers, strategy = search_openalex(
+                keywords=keywords,
+                year_min=int(year_min),
+                year_max=int(year_max),
+                max_results=25,
+                mailto=secrets.openalex_mailto,
+            )
+        except RuntimeError as exc:
+            st.error(f"Search failed: {exc}")
+            papers, strategy = [], None
+
+    if strategy:
+        st.success(f"Retrieved {len(papers)} papers.")
+        with st.expander("Search strategy (reproducibility record)"):
+            st.json(strategy.model_dump(mode="json"))
+
+        for p in papers:
+            with st.container(border=True):
+                st.markdown(f"**{p.title}** ({p.year or 'n.d.'})")
+                st.caption(
+                    f"{', '.join(p.authors[:4]) or 'Unknown authors'} · "
+                    f"{p.journal or 'Unknown journal'} · "
+                    f"{p.citation_count or 0} citations · "
+                    f"{'Open Access' if p.open_access else 'Closed Access'}"
+                )
+                if p.abstract:
+                    st.write(p.abstract[:400] + ("..." if len(p.abstract) > 400 else ""))
+
+st.subheader("3. What's still placeholder")
 st.info(
-    "This is Module 1: project scaffolding, validated config, shared data "
-    "schemas, logging, and this Streamlit shell. Literature retrieval "
-    "(OpenAlex / Crossref / Semantic Scholar), the RAG pipeline, and the "
-    "human-in-the-loop gap review screen are added in the next modules — "
-    "nothing here fabricates research gaps yet, by design."
-)
-
-with st.expander("Current literature search defaults (config/settings.yaml)"):
-    st.json(settings.literature_defaults.model_dump())
-
-st.caption(
-    f"Selected domain: **{domain}**. This selection will drive the "
-    "literature retrieval module once it's added."
+    "Retrieved papers are shown as-is — nothing is screened, clustered, or "
+    "turned into a research gap yet. Those are the next modules: "
+    "deduplication + screening, then RAG, then evidence-based gap "
+    "generation with mandatory human review. Nothing here fabricates a "
+    "research gap — by design, that logic doesn't exist yet."
 )
