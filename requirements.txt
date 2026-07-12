@@ -1,0 +1,6 @@
+-e .
+streamlit>=1.38
+pydantic>=2.7
+pydantic-settings>=2.3
+PyYAML>=6.0
+python-dotenv>=1.0

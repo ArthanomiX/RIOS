@@ -1,0 +1,30 @@
+# Supported research domains. Adding a domain here does NOT require touching
+# Python code — modules read this list at runtime.
+
+domains:
+  - Agricultural Economics
+  - Agricultural Marketing
+  - Agribusiness
+  - International Trade
+  - Development Economics
+  - Environmental Economics
+  - Climate Change Economics
+  - Behavioral Economics
+  - Financial Economics
+  - Health Economics
+  - Energy Economics
+  - Supply Chain Management
+  - Marketing Analytics
+  - Commodity Markets
+  - Agricultural Finance
+  - Food Security
+  - Econometrics
+  - Statistics
+  - Machine Learning
+  - Deep Learning
+  - Forecasting
+  - Time Series
+  - Spatial Econometrics
+  - Network Science
+  - Panel Data Analysis
+  - Policy Evaluation

@@ -1,0 +1,21 @@
+# RIOS settings — human-edited. Comments are kept intentionally, since a
+# reviewer or future-you needs to understand *why* a default was chosen.
+
+app:
+  name: "RIOS — Research Intelligence Operating System"
+  author: "Suman_Econ (UAS-B)"
+  version: "0.1.0"          # bump this whenever behavior changes materially
+
+literature_defaults:
+  publication_year_min: 2015
+  publication_year_max: 2026
+  journal_quartiles_allowed: ["Q1", "Q2"]
+  open_access_only: false
+  languages: ["English"]
+
+prompts:
+  active_version: "v1"      # every generation output must record this value
+
+logging:
+  level: "INFO"
+  log_dir: "data/cache/logs"
