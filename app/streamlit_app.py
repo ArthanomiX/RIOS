@@ -22,6 +22,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from rios.core.config import get_secrets, get_settings
+from rios.ingestion import ScreeningCriteria, dedup_papers, screen_papers
 from rios.literature import search_openalex
 
 st.set_page_config(
@@ -140,11 +141,35 @@ if st.button("Search OpenAlex", type="primary"):
             papers, strategy = [], None
 
     if strategy:
-        st.success(f"Retrieved {len(papers)} papers.")
+        st.success(f"Retrieved {len(papers)} papers from OpenAlex.")
+
+        deduped_papers, num_removed = dedup_papers(papers)
+        if num_removed:
+            st.caption(f"Removed {num_removed} duplicate record(s).")
+
+        st.markdown("**Screening criteria**")
+        require_abstract = st.checkbox("Require abstract present", value=True)
+        min_citations = st.number_input("Minimum citation count", value=0, min_value=0)
+
+        criteria = ScreeningCriteria(
+            require_abstract=require_abstract,
+            min_citation_count=int(min_citations),
+        )
+        included, excluded, decisions = screen_papers(deduped_papers, criteria)
+
+        st.info(f"After screening: **{len(included)} included**, {len(excluded)} excluded.")
+
         with st.expander("Search strategy (reproducibility record)"):
             st.json(strategy.model_dump(mode="json"))
 
-        for p in papers:
+        with st.expander(f"Excluded papers and reasons ({len(excluded)})"):
+            for paper, decision in zip(
+                [p for p in deduped_papers if p.id not in {i.id for i in included}],
+                [d for d in decisions if not d.included],
+            ):
+                st.markdown(f"- **{paper.title}** — {'; '.join(decision.reasons)}")
+
+        for p in included:
             with st.container(border=True):
                 st.markdown(f"**{p.title}** ({p.year or 'n.d.'})")
                 st.caption(
@@ -156,11 +181,11 @@ if st.button("Search OpenAlex", type="primary"):
                 if p.abstract:
                     st.write(p.abstract[:400] + ("..." if len(p.abstract) > 400 else ""))
 
-st.subheader("3. What's still placeholder")
+st.subheader("4. What's still placeholder")
 st.info(
-    "Retrieved papers are shown as-is — nothing is screened, clustered, or "
-    "turned into a research gap yet. Those are the next modules: "
-    "deduplication + screening, then RAG, then evidence-based gap "
-    "generation with mandatory human review. Nothing here fabricates a "
-    "research gap — by design, that logic doesn't exist yet."
+    "Included papers above are deduplicated and screened, but not yet "
+    "clustered or synthesized into research gaps. Next: RAG (chunking + "
+    "embeddings + retrieval), then evidence-based gap generation with "
+    "mandatory human review. Nothing here fabricates a research gap — by "
+    "design, that logic doesn't exist yet."
 )
