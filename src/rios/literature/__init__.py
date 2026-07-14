@@ -1,1 +1,6 @@
-"""Placeholder — built in a later module. See README for build order."""
+"""Literature retrieval clients (OpenAlex, and later Crossref / Semantic Scholar)."""
+
+from rios.literature.openalex import search_openalex
+
+__all__ = ["search_openalex"]
+
