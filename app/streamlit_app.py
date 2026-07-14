@@ -24,6 +24,7 @@ import streamlit.components.v1 as components
 from rios.core.config import get_secrets, get_settings
 from rios.ingestion import ScreeningCriteria, dedup_papers, screen_papers
 from rios.literature import search_openalex
+from rios.rag import VectorStore, chunk_papers
 
 st.set_page_config(
     page_title="RIOS — Research Intelligence Operating System",
@@ -181,11 +182,47 @@ if st.button("Search OpenAlex", type="primary"):
                 if p.abstract:
                     st.write(p.abstract[:400] + ("..." if len(p.abstract) > 400 else ""))
 
+        # Persisted in session_state so it survives the rerun triggered by
+        # widgets in section 3 below (Streamlit reruns the whole script on
+        # every interaction — without this, "included" would vanish the
+        # moment the user types a query).
+        st.session_state["included_papers"] = included
+
+st.subheader("3. Ask the retrieved evidence a question")
+
+included_papers = st.session_state.get("included_papers")
+if not included_papers:
+    st.caption("Run a search and screen papers above first.")
+else:
+    query_text = st.text_input(
+        "Query (e.g. 'what methodologies are used for price forecasting?')"
+    )
+    if query_text:
+        chunks = chunk_papers(included_papers)
+        store = VectorStore()
+        store.build(chunks)
+        results = store.query(query_text, top_k=5)
+
+        if not results:
+            st.warning("No relevant passages found in the retrieved literature.")
+        else:
+            papers_by_id = {p.id: p for p in included_papers}
+            st.caption(
+                f"Top {len(results)} matching passages — each is traceable to "
+                "its source paper, nothing here is generated."
+            )
+            for r in results:
+                source_paper = papers_by_id.get(r.chunk.paper_id)
+                with st.container(border=True):
+                    st.markdown(f"**Relevance: {r.score:.2f}**")
+                    st.write(r.chunk.text)
+                    if source_paper:
+                        st.caption(f"Source: {source_paper.title} ({source_paper.year or 'n.d.'})")
+
 st.subheader("4. What's still placeholder")
 st.info(
-    "Included papers above are deduplicated and screened, but not yet "
-    "clustered or synthesized into research gaps. Next: RAG (chunking + "
-    "embeddings + retrieval), then evidence-based gap generation with "
-    "mandatory human review. Nothing here fabricates a research gap — by "
-    "design, that logic doesn't exist yet."
+    "You can now retrieve relevant passages from the screened literature, "
+    "but nothing is yet synthesized into a research gap. Next: evidence-based "
+    "gap generation with mandatory human review. Nothing here fabricates a "
+    "research gap — by design, that logic doesn't exist yet."
 )

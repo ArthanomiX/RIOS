@@ -89,6 +89,17 @@ class ResearchGapCandidate(BaseModel):
     reviewed_at: datetime | None = None
 
 
+class Chunk(BaseModel):
+    """A retrievable unit of text derived from a Paper. Kept small and
+    always traceable back to `paper_id` — the gap-generation module must
+    never use a chunk without being able to cite which paper it came from.
+    """
+
+    chunk_id: str
+    paper_id: str
+    text: str
+
+
 class ScreeningDecision(BaseModel):
     """Records why a single paper was included or excluded during
     screening. One of these is kept for every paper, not just the ones
