@@ -89,17 +89,6 @@ class ResearchGapCandidate(BaseModel):
     reviewed_at: datetime | None = None
 
 
-class ScreeningDecision(BaseModel):
-    """Records why a single paper was included or excluded during
-    screening. One of these is kept for every paper, not just the ones
-    that pass — an excluded paper with no recorded reason is exactly the
-    kind of untraceable output the reproducibility principle forbids."""
-
-    paper_id: str
-    included: bool
-    reasons: list[str] = Field(default_factory=list)
-
-
 class ReviewDecision(BaseModel):
     """One entry in the permanent review history log — never overwritten,
     only appended to, so the full decision trail is reproducible."""
