@@ -1,1 +1,6 @@
-"""Placeholder — built in a later module. See README for build order."""
+"""Evidence-grounded journal recommendation for accepted gaps."""
+
+from rios.journals.recommender import recommend_journals
+
+__all__ = ["recommend_journals"]
+

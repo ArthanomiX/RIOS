@@ -38,7 +38,9 @@ from rios.core.config import get_secrets, get_settings
 from rios.core.schemas import ReviewStatus
 from rios.gap_engine import generate_gap_candidates
 from rios.ingestion import ScreeningCriteria, dedup_papers, screen_papers
+from rios.journals import recommend_journals
 from rios.literature import search_openalex
+from rios.methodology import recommend_methodologies
 from rios.rag import VectorStore, chunk_papers
 from rios.review import apply_review
 
@@ -255,6 +257,7 @@ else:
         with st.spinner("Analyzing retrieved evidence — this calls the Gemini API..."):
             try:
                 chunks_for_generation = chunk_papers(included_papers)
+                st.session_state["evidence_chunks"] = chunks_for_generation
                 candidates = generate_gap_candidates(
                     chunks_for_generation,
                     domain=domain,
@@ -327,6 +330,36 @@ if gap_candidates:
                     + (f" — {gap.review_comment}" if gap.review_comment else "")
                 )
 
+                if gap.review_status == ReviewStatus.ACCEPTED:
+                    evidence_chunks = st.session_state.get("evidence_chunks", [])
+                    method_recs = recommend_methodologies(gap, evidence_chunks)
+                    journal_recs = recommend_journals(gap, papers_by_id)
+
+                    with st.expander("📐 Methodology recommendations (evidence-grounded)"):
+                        if not method_recs:
+                            st.caption(
+                                "No known methodology terms were detected in the "
+                                "supporting evidence text."
+                            )
+                        for m in method_recs:
+                            st.markdown(f"**{m.name}** — mentioned in {m.mention_count} supporting passage(s)")
+                            st.caption(m.reason_for_recommendation)
+                            st.write(f"*Typical use:* {m.typical_applications}")
+                            st.write(f"*Strengths:* {m.strengths}")
+                            st.write(f"*Limitations:* {m.limitations}")
+                            if m.alternatives_considered:
+                                st.caption("Alternatives also seen in evidence: " + ", ".join(m.alternatives_considered))
+                            st.divider()
+
+                    with st.expander("📚 Journal recommendations (evidence-grounded)"):
+                        if not journal_recs:
+                            st.caption(
+                                "Supporting papers don't have recorded journal names."
+                            )
+                        for j in journal_recs:
+                            st.markdown(f"**{j.journal_name}** — {j.paper_count} supporting paper(s), {j.total_citations} total citations")
+                            st.caption(j.reason_for_recommendation)
+
     if review_history:
         with st.expander(f"Review history / audit trail ({len(review_history)} decisions)"):
             for r in review_history:
@@ -338,7 +371,7 @@ if gap_candidates:
 
 st.subheader("6. What's still placeholder")
 st.info(
-    "Accepted gaps are not yet turned into full research frameworks "
-    "(titles, objectives, hypotheses, methodology recommendations, journal "
-    "matches) or exported reports — those are the next modules."
+    "Accepted gaps now come with evidence-grounded methodology and journal "
+    "suggestions. Still to come: full research framework generation (titles, "
+    "objectives, hypotheses) and exportable reports (.docx / .pdf)."
 )

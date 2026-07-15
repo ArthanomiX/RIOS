@@ -89,6 +89,35 @@ class ResearchGapCandidate(BaseModel):
     reviewed_at: datetime | None = None
 
 
+class MethodologyRecommendation(BaseModel):
+    """A methodology recommendation for an accepted gap, derived from how
+    often it's actually mentioned in the gap's supporting papers — never
+    invented. Strengths/limitations/typical_applications are standard
+    reference facts about the method itself (textbook-level knowledge, not
+    a generated research claim), included per the audit-trail requirement.
+    """
+
+    name: str
+    mention_count: int
+    supporting_paper_ids: list[str]
+    typical_applications: str
+    strengths: str
+    limitations: str
+    alternatives_considered: list[str] = Field(default_factory=list)
+    reason_for_recommendation: str
+
+
+class JournalRecommendation(BaseModel):
+    """A journal recommendation derived from where the gap's supporting
+    papers were actually published — not a fabricated "good fit" guess."""
+
+    journal_name: str
+    paper_count: int
+    total_citations: int
+    supporting_paper_ids: list[str]
+    reason_for_recommendation: str
+
+
 class Chunk(BaseModel):
     """A retrievable unit of text derived from a Paper. Kept small and
     always traceable back to `paper_id` — the gap-generation module must
