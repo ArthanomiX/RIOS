@@ -42,6 +42,7 @@ from rios.journals import recommend_journals
 from rios.literature import search_openalex
 from rios.methodology import recommend_methodologies
 from rios.rag import VectorStore, chunk_papers
+from rios.reports import build_gap_report_docx, build_gap_report_json
 from rios.review import apply_review
 
 st.set_page_config(
@@ -160,6 +161,7 @@ if st.button("Search OpenAlex", type="primary"):
             papers, strategy = [], None
 
     if strategy:
+        st.session_state["search_strategy"] = strategy
         st.success(f"Retrieved {len(papers)} papers from OpenAlex.")
 
         deduped_papers, num_removed = dedup_papers(papers)
@@ -360,6 +362,32 @@ if gap_candidates:
                             st.markdown(f"**{j.journal_name}** — {j.paper_count} supporting paper(s), {j.total_citations} total citations")
                             st.caption(j.reason_for_recommendation)
 
+                    st.markdown("**📄 Export this gap as a report**")
+                    dl1, dl2 = st.columns(2)
+                    search_strategy = st.session_state.get("search_strategy")
+
+                    docx_bytes = build_gap_report_docx(
+                        gap, papers_by_id, method_recs, journal_recs, search_strategy
+                    )
+                    dl1.download_button(
+                        "⬇️ Download Word report (.docx)",
+                        data=docx_bytes,
+                        file_name=f"RIOS_gap_{gap_id[:8]}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key=f"docx_dl_{gap_id}",
+                    )
+
+                    json_str = build_gap_report_json(
+                        gap, papers_by_id, method_recs, journal_recs, search_strategy
+                    )
+                    dl2.download_button(
+                        "⬇️ Download JSON record",
+                        data=json_str,
+                        file_name=f"RIOS_gap_{gap_id[:8]}.json",
+                        mime="application/json",
+                        key=f"json_dl_{gap_id}",
+                    )
+
     if review_history:
         with st.expander(f"Review history / audit trail ({len(review_history)} decisions)"):
             for r in review_history:
@@ -371,7 +399,7 @@ if gap_candidates:
 
 st.subheader("6. What's still placeholder")
 st.info(
-    "Accepted gaps now come with evidence-grounded methodology and journal "
-    "suggestions. Still to come: full research framework generation (titles, "
-    "objectives, hypotheses) and exportable reports (.docx / .pdf)."
+    "Accepted gaps now export as Word reports and JSON records. Still to "
+    "come: full research framework generation (titles, objectives, "
+    "hypotheses) and multi-format exports (PDF, Excel, PowerPoint)."
 )
