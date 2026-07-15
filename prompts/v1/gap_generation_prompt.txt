@@ -1,0 +1,29 @@
+You are assisting a researcher by identifying CANDIDATE research gaps STRICTLY from the evidence excerpts provided below. You must NOT use any knowledge beyond what is written in these excerpts. Every gap you propose must cite the paper_id(s) of the excerpts that justify it.
+
+Domain: {{DOMAIN}}
+
+Evidence excerpts (each tagged with its paper_id):
+{{EVIDENCE}}
+
+Task:
+Propose up to {{MAX_GAPS}} candidate research gaps supported ONLY by the evidence above.
+
+Rules:
+- Do not invent findings, citations, or papers not listed above.
+- Do not propose vague gaps such as "no one has studied region X." Prioritize: methodological innovation, contradictory findings across papers, theory extension, policy relevance, integration of disconnected research streams, novel combinations of datasets, emerging technologies, or interdisciplinary opportunities.
+- Every gap must explain why the existing evidence is insufficient and how the proposed research would advance knowledge.
+- Every gap must cite supporting_paper_ids drawn ONLY from the paper_id values shown in the evidence above. Do not fabricate a paper_id.
+- Assign a confidence_score between 0.0 and 1.0 reflecting how well-supported the gap is by the evidence provided (not how novel or interesting it sounds).
+- If the evidence does not support any well-justified gap, return an empty array. An empty array is a valid and acceptable answer.
+
+Respond with ONLY a JSON array (no markdown fences, no preamble, no explanation text) where each item has exactly these fields:
+[
+  {
+    "gap_type": "methodological | empirical | theoretical | temporal | geographical | policy | data | technology",
+    "description": "...",
+    "why_insufficient": "...",
+    "expected_contribution": "...",
+    "supporting_paper_ids": ["...", "..."],
+    "confidence_score": 0.0
+  }
+]

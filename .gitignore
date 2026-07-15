@@ -16,6 +16,10 @@ outputs/*
 !data/vector_store/.gitkeep
 !outputs/.gitkeep
 
+# Build artifacts
+*.egg-info/
+.pytest_cache/
+
 # OS / editor
 .DS_Store
 .vscode/

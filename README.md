@@ -52,7 +52,7 @@ RIOS/
 3. Set **Main file path** to `app/streamlit_app.py`.
 4. Under "Advanced settings → Secrets", add your API key(s), e.g.:
    ```toml
-   ANTHROPIC_API_KEY = "sk-..."
+   GEMINI_API_KEY = "AIza..."
    ```
 5. Deploy. The app sleeps after inactivity and wakes on next visit — fine for
    occasional use.

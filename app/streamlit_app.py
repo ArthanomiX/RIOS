@@ -9,6 +9,7 @@ without touching the pipeline.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,10 +22,25 @@ if str(SRC_DIR) not in sys.path:
 import streamlit as st
 import streamlit.components.v1 as components
 
+# Streamlit Cloud secrets (set via the dashboard) live in st.secrets, not
+# automatically in os.environ. pydantic-settings (used by rios.core.config)
+# reads from os.environ / .env, so we bridge the values here, once, before
+# any get_secrets() call — this lets the same Secrets class work identically
+# locally (.env file) and on Streamlit Cloud (dashboard secrets).
+try:
+    for _key in ("GEMINI_API_KEY", "OPENALEX_MAILTO", "CROSSREF_MAILTO"):
+        if _key in st.secrets and not os.environ.get(_key):
+            os.environ[_key] = st.secrets[_key]
+except Exception:
+    pass  # no secrets.toml present locally — fine, .env still works
+
 from rios.core.config import get_secrets, get_settings
+from rios.core.schemas import ReviewStatus
+from rios.gap_engine import generate_gap_candidates
 from rios.ingestion import ScreeningCriteria, dedup_papers, screen_papers
 from rios.literature import search_openalex
 from rios.rag import VectorStore, chunk_papers
+from rios.review import apply_review
 
 st.set_page_config(
     page_title="RIOS — Research Intelligence Operating System",
@@ -219,10 +235,110 @@ else:
                     if source_paper:
                         st.caption(f"Source: {source_paper.title} ({source_paper.year or 'n.d.'})")
 
-st.subheader("4. What's still placeholder")
+st.subheader("4. Generate evidence-based research gap candidates")
+
+secrets = get_secrets()
+papers_by_id = {p.id: p for p in included_papers} if included_papers else {}
+
+if not included_papers:
+    st.caption("Run a search and screen papers above first.")
+elif not secrets.gemini_api_key:
+    st.warning(
+        "No Gemini API key configured. Add `GEMINI_API_KEY` under "
+        "your Streamlit app's **Settings → Secrets** (or in a local `.env` "
+        "file) to enable this step. Get a free key (no credit card needed) "
+        "at aistudio.google.com/apikey. Nothing is generated without it."
+    )
+else:
+    max_gaps = st.slider("Max candidate gaps to generate", 1, 8, 5)
+    if st.button("Generate candidate gaps", type="primary"):
+        with st.spinner("Analyzing retrieved evidence — this calls the Gemini API..."):
+            try:
+                chunks_for_generation = chunk_papers(included_papers)
+                candidates = generate_gap_candidates(
+                    chunks_for_generation,
+                    domain=domain,
+                    api_key=secrets.gemini_api_key,
+                    max_gaps=max_gaps,
+                )
+                st.session_state.setdefault("gap_candidates", {})
+                for c in candidates:
+                    st.session_state["gap_candidates"][c.gap_id] = c
+                if not candidates:
+                    st.info(
+                        "The model did not return any gap it could support "
+                        "from this evidence — try broadening the search above."
+                    )
+            except (ValueError, RuntimeError) as exc:
+                st.error(f"Generation failed: {exc}")
+
+gap_candidates = st.session_state.get("gap_candidates", {})
+review_history = st.session_state.setdefault("review_history", [])
+
+if gap_candidates:
+    st.subheader("5. Human review — accept, modify, or reject each candidate")
+    st.caption(
+        "Nothing here is final until you decide. Every decision is logged "
+        "below with a timestamp for the audit trail."
+    )
+    for gap_id, gap in list(gap_candidates.items()):
+        with st.container(border=True):
+            st.markdown(f"**[{gap.gap_type}] {gap.description}**")
+            st.caption(
+                f"Confidence: {gap.confidence_score:.2f} · "
+                f"Prompt {gap.prompt_version} · Model {gap.model_version}"
+            )
+            st.write(f"**Why existing evidence is insufficient:** {gap.why_insufficient}")
+            st.write(f"**Expected contribution:** {gap.expected_contribution}")
+            supporting_titles = [
+                papers_by_id[pid].title for pid in gap.supporting_paper_ids if pid in papers_by_id
+            ]
+            st.caption("Supporting papers: " + "; ".join(supporting_titles))
+
+            if gap.review_status == ReviewStatus.PENDING:
+                comment = st.text_input("Comment (optional)", key=f"comment_{gap_id}")
+                c1, c2, c3 = st.columns(3)
+                if c1.button("✅ Accept", key=f"accept_{gap_id}"):
+                    updated, record = apply_review(gap, ReviewStatus.ACCEPTED, comment=comment)
+                    gap_candidates[gap_id] = updated
+                    review_history.append(record)
+                    st.rerun()
+                if c2.button("❌ Reject", key=f"reject_{gap_id}"):
+                    updated, record = apply_review(gap, ReviewStatus.REJECTED, comment=comment)
+                    gap_candidates[gap_id] = updated
+                    review_history.append(record)
+                    st.rerun()
+                with c3.popover("✏️ Modify"):
+                    new_desc = st.text_area(
+                        "Edit description", value=gap.description, key=f"modify_text_{gap_id}"
+                    )
+                    if st.button("Save as modified", key=f"modify_save_{gap_id}"):
+                        updated, record = apply_review(
+                            gap, ReviewStatus.MODIFIED, comment=comment,
+                            modified_description=new_desc,
+                        )
+                        gap_candidates[gap_id] = updated
+                        review_history.append(record)
+                        st.rerun()
+            else:
+                status_label = gap.review_status.value.upper()
+                st.success(
+                    f"Status: {status_label}"
+                    + (f" — {gap.review_comment}" if gap.review_comment else "")
+                )
+
+    if review_history:
+        with st.expander(f"Review history / audit trail ({len(review_history)} decisions)"):
+            for r in review_history:
+                st.caption(
+                    f"{r.decided_at.strftime('%Y-%m-%d %H:%M UTC')} · "
+                    f"{r.decision.value} · gap `{r.target_id[:8]}` · {r.reviewer}"
+                    + (f" — {r.comment}" if r.comment else "")
+                )
+
+st.subheader("6. What's still placeholder")
 st.info(
-    "You can now retrieve relevant passages from the screened literature, "
-    "but nothing is yet synthesized into a research gap. Next: evidence-based "
-    "gap generation with mandatory human review. Nothing here fabricates a "
-    "research gap — by design, that logic doesn't exist yet."
+    "Accepted gaps are not yet turned into full research frameworks "
+    "(titles, objectives, hypotheses, methodology recommendations, journal "
+    "matches) or exported reports — those are the next modules."
 )
