@@ -1,6 +1,7 @@
 """
-Evidence-constrained research gap generation, using the Google Gemini API
-(free tier — Gemini 2.5 Flash by default, no credit card required).
+Evidence-constrained research gap generation, using Google's official
+`google-genai` SDK to call the Gemini API (free tier — Gemini 2.5 Flash by
+default, no credit card required).
 
 WHY this is the most safety-critical module in RIOS: this is the only place
 an LLM is used to produce something a researcher might act on. Every design
@@ -18,11 +19,13 @@ choice here enforces the evidence-before-generation principle:
   module ever marks a gap as accepted — only an explicit human action via
   rios.review.apply_review can do that.
 
-WHY Gemini specifically: its free tier (Gemini 2.5 Flash) requires no
-credit card and comfortably covers occasional/personal use (10 requests per
-minute, 250 per day as of 2026) — a good fit for a student project with no
-budget for paid API usage. The Anthropic-API-shaped alternative would work
-identically if swapped in later; only this file would need to change.
+WHY the official SDK instead of a raw REST call: Google has been rolling
+out a newer API key format (prefixed "AQ." instead of the older "AIzaSy...")
+that is inconsistently compatible with hand-rolled REST calls to the raw
+generateContent endpoint. The official `google-genai` SDK is what Google
+actively maintains to stay correct across exactly this kind of backend
+change, so it's the more robust integration point for a project that has
+to keep working with whatever key format a student's account is issued.
 """
 
 from __future__ import annotations
@@ -32,16 +35,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+from google import genai
+from google.genai import types as genai_types
 
 from rios.core.logging_setup import get_logger
 from rios.core.schemas import Chunk, ResearchGapCandidate, ReviewStatus
 
 logger = get_logger(__name__)
 
-GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_MODEL = "gemini-2.5-flash"
-DEFAULT_TIMEOUT_SECONDS = 60
 PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 
@@ -79,10 +81,10 @@ def generate_gap_candidates(
     """Generate candidate research gaps from evidence chunks only.
 
     Raises ValueError for bad inputs (no chunks / no key), RuntimeError if
-    the model's response can't be parsed as JSON or was blocked. Returns
-    only candidates that passed evidence validation — the caller should
-    assume anything returned here is safe to show a human for review, but
-    NOT safe to treat as already accepted.
+    the model's response can't be parsed as JSON or was blocked/empty.
+    Returns only candidates that passed evidence validation — the caller
+    should assume anything returned here is safe to show a human for
+    review, but NOT safe to treat as already accepted.
     """
     if not chunks:
         raise ValueError("Cannot generate gaps from zero evidence chunks.")
@@ -97,32 +99,27 @@ def generate_gap_candidates(
         .replace("{{MAX_GAPS}}", str(max_gaps))
     )
 
-    url = f"{GEMINI_API_BASE}/{model}:generateContent"
-    response = requests.post(
-        url,
-        headers={
-            "x-goog-api-key": api_key,
-            "content-type": "application/json",
-        },
-        json={
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.4, "maxOutputTokens": 2000},
-        },
-        timeout=DEFAULT_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    data = response.json()
-
-    candidates_payload = data.get("candidates") or []
-    if not candidates_payload:
-        # Can happen if Gemini's safety filters blocked the response outright.
-        block_reason = (data.get("promptFeedback") or {}).get("blockReason")
-        raise RuntimeError(
-            f"Gemini returned no candidates (blockReason={block_reason})."
+    client = genai.Client(api_key=api_key)
+    try:
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                temperature=0.4,
+                max_output_tokens=2000,
+            ),
         )
+    except Exception as exc:  # SDK raises its own exception types; treat all as a generation failure
+        logger.error("Gemini API call failed: %s", exc)
+        raise RuntimeError(f"Gemini API call failed: {exc}") from exc
 
-    parts = (candidates_payload[0].get("content") or {}).get("parts") or []
-    raw_text = "".join(p.get("text", "") for p in parts)
+    raw_text = (response.text or "").strip()
+    if not raw_text:
+        block_reason = None
+        feedback = getattr(response, "prompt_feedback", None)
+        if feedback is not None:
+            block_reason = getattr(feedback, "block_reason", None)
+        raise RuntimeError(f"Gemini returned no usable text (blockReason={block_reason}).")
 
     try:
         raw_candidates = _extract_json_array(raw_text)
