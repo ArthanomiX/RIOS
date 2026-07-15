@@ -39,7 +39,7 @@ from rios.core.schemas import ReviewStatus
 from rios.gap_engine import generate_gap_candidates
 from rios.ingestion import ScreeningCriteria, dedup_papers, screen_papers
 from rios.journals import recommend_journals
-from rios.literature import search_openalex
+from rios.literature import AVAILABLE_SOURCES, search_all_sources
 from rios.methodology import recommend_methodologies
 from rios.rag import VectorStore, chunk_papers
 from rios.reports import build_gap_report_docx, build_gap_report_json
@@ -128,7 +128,7 @@ st.markdown(
 st.subheader("1. Select a research domain")
 domain = st.selectbox("Domain", options=settings.domains, index=0)
 
-st.subheader("2. Search real literature (OpenAlex)")
+st.subheader("2. Search real literature")
 
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
@@ -144,25 +144,39 @@ with col3:
         "To year", value=settings.literature_defaults.publication_year_max
     )
 
-if st.button("Search OpenAlex", type="primary"):
+selected_sources = st.multiselect(
+    "Databases to search",
+    options=list(AVAILABLE_SOURCES),
+    default=list(AVAILABLE_SOURCES),
+    help="All three are free and need no API key. Searching more sources "
+         "finds more papers but takes a bit longer.",
+)
+
+if st.button("Search selected databases", type="primary"):
     keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
     secrets = get_secrets()
-    with st.spinner("Querying OpenAlex..."):
-        try:
-            papers, strategy = search_openalex(
+    if not selected_sources:
+        st.warning("Select at least one database to search.")
+        papers, strategy = [], None
+    else:
+        with st.spinner(f"Querying {', '.join(selected_sources)}..."):
+            papers, strategy, source_errors = search_all_sources(
                 keywords=keywords,
                 year_min=int(year_min),
                 year_max=int(year_max),
-                max_results=25,
-                mailto=secrets.openalex_mailto,
+                sources=selected_sources,
+                max_results_per_source=25,
+                openalex_mailto=secrets.openalex_mailto,
+                crossref_mailto=secrets.crossref_mailto,
             )
-        except RuntimeError as exc:
-            st.error(f"Search failed: {exc}")
-            papers, strategy = [], None
+        for source_name, error_msg in source_errors.items():
+            st.warning(f"{source_name} search failed, continuing with other sources: {error_msg}")
 
-    if strategy:
+    if strategy and strategy.databases_searched:
         st.session_state["search_strategy"] = strategy
-        st.success(f"Retrieved {len(papers)} papers from OpenAlex.")
+        st.success(
+            f"Retrieved {len(papers)} papers from {', '.join(strategy.databases_searched)}."
+        )
 
         deduped_papers, num_removed = dedup_papers(papers)
         if num_removed:
